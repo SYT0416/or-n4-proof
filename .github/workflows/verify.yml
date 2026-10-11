@@ -1,3 +1,6 @@
+# .github/workflows/verify.yml
+
+```yaml
 name: verify-n4
 
 on:
@@ -17,22 +20,23 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      # 从 fork 的固定提交编译 Carcara（crates.io 上的 "carcara" 不可用）
+      # Build Carcara from a pinned commit of the official repo (ufmg-smite);
+      # the crates.io "carcara" crate is not the right package.
       - name: Install Carcara (pinned commit)
         run: |
-          git clone https://github.com/hanielb/carcara.git carcara-src
+          git clone https://github.com/ufmg-smite/carcara.git carcara-src
           cd carcara-src
           git checkout 394edbb15ba95c47893f1d821fddde7e016af178
           cargo build --release
           echo "$PWD/target/release" >> "$GITHUB_PATH"
 
-      - name: Get cvc5 (pin 1.4.2)
+      - name: Get cvc5 (pin 1.4.2 for reproducibility)
         run: |
           curl -L -o cvc5.zip https://github.com/cvc5/cvc5/releases/download/cvc5-1.4.2/cvc5-Linux-x86_64-static.zip
           unzip -q cvc5.zip
           echo "$PWD/cvc5-Linux-x86_64-static/bin" >> "$GITHUB_PATH"
 
-      - name: Produce and check proofs for m=8..12
+      - name: Produce (fine-grained) and check proofs for m=8..12
         run: |
           set -euo pipefail
           mkdir -p out
@@ -41,17 +45,18 @@ jobs:
             python3 ci/dump_smt2.py --m "$m" > "out/m${m}.smt2"
             sha256sum "out/m${m}.smt2" | tee "out/m${m}.smt2.sha256"
 
+            # cvc5 prints "unsat" on the FIRST stdout line, then the Alethe proof.
             cvc5 --produce-proofs --proof-format-mode=alethe \
                  --proof-granularity=theory-rewrite --simplification=none --dag-thresh=0 \
                  --tlimit=600000 --dump-proofs "out/m${m}.smt2" \
                  2> "out/cvc5-m${m}.log" > "out/m${m}.alethe.raw"
 
-            # 剥掉首行 "unsat"，得到纯 Alethe 证明
+            # Strip the leading "unsat" line -> pure Alethe proof.
             tail -n +2 "out/m${m}.alethe.raw" > "out/m${m}.alethe"
             echo "proof first line:"; head -1 "out/m${m}.alethe"
             sha256sum "out/m${m}.alethe" | tee "out/m${m}.alethe.sha256"
 
-            # 独立核验；非零退出即让 job 失败
+            # Independent check; a non-zero exit FAILS the job.
             carcara check --allow-int-real-subtyping --expand-let-bindings \
               "out/m${m}.alethe" "out/m${m}.smt2"
             echo "m=$m : carcara check PASS"
@@ -62,3 +67,4 @@ jobs:
         with:
           name: n4-alethe-proofs
           path: out/
+```

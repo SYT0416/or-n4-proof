@@ -16,12 +16,19 @@ jobs:
           echo "$PWD/cvc5-Linux-x86_64-static/bin" >> $GITHUB_PATH
       - name: Produce and check Alethe proofs
         run: |
+          set -euxo pipefail
           mkdir -p out
+          echo "===== carcara usage ====="
+          carcara check --help || true
           for m in 8 9 10 11 12; do
+            echo "===== m=$m : build smt2 ====="
             python3 ci/dump_smt2.py --m $m > out/m$m.smt2
             sha256sum out/m$m.smt2 >> out/hashes.txt
+            echo "===== m=$m : cvc5 -> alethe ====="
             cvc5 --produce-proofs --proof-format-mode=alethe --dump-proofs out/m$m.smt2 > out/m$m.alethe
-            carcara check out/m$m.alethe
+            echo "cvc5 exit=$? ; proof head:"; head -3 out/m$m.alethe
+            echo "===== m=$m : carcara check ====="
+            carcara check out/m$m.alethe out/m$m.smt2
           done
       - uses: actions/upload-artifact@v4
         with:

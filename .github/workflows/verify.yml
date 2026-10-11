@@ -1,35 +1,64 @@
 name: verify-n4
+
 on:
   workflow_dispatch:
+  push:
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install cvc5-compatible Carcara (pinned commit)
+
+      # 从 fork 的固定提交编译 Carcara（crates.io 上的 "carcara" 不可用）
+      - name: Install Carcara (pinned commit)
         run: |
           git clone https://github.com/hanielb/carcara.git carcara-src
           cd carcara-src
           git checkout 394edbb15ba95c47893f1d821fddde7e016af178
           cargo build --release
-          echo "$PWD/target/release" >> $GITHUB_PATH
-      - name: Get cvc5
+          echo "$PWD/target/release" >> "$GITHUB_PATH"
+
+      - name: Get cvc5 (pin 1.4.2)
         run: |
-          curl -L -o cvc5.zip https://github.com/cvc5/cvc5/releases/latest/download/cvc5-Linux-x86_64-static.zip
+          curl -L -o cvc5.zip https://github.com/cvc5/cvc5/releases/download/cvc5-1.4.2/cvc5-Linux-x86_64-static.zip
           unzip -q cvc5.zip
-          echo "$PWD/cvc5-Linux-x86_64-static/bin" >> $GITHUB_PATH
-      - name: Produce (fine-grained) and check proofs
+          echo "$PWD/cvc5-Linux-x86_64-static/bin" >> "$GITHUB_PATH"
+
+      - name: Produce and check proofs for m=8..12
         run: |
-          set -uo pipefail
+          set -euo pipefail
           mkdir -p out
           for m in 8 9 10 11 12; do
             echo "========== m=$m =========="
-            python3 ci/dump_smt2.py --m $m > out/m$m.smt2
+            python3 ci/dump_smt2.py --m "$m" > "out/m${m}.smt2"
+            sha256sum "out/m${m}.smt2" | tee "out/m${m}.smt2.sha256"
+
             cvc5 --produce-proofs --proof-format-mode=alethe \
                  --proof-granularity=theory-rewrite --simplification=none --dag-thresh=0 \
-                 --dump-proofs out/m$m.smt2 > out/m$m.alethe
-            echo "proof head:"; head -1 out/m$m.alethe
-            echo "--- strict check ---"
-            ( carcara check --allow-int-real-subtyping --expand-let-bindings out/m$m.alethe out/m$m.smt2 2>&1 || true ) | tail -6
+                 --tlimit=600000 --dump-proofs "out/m${m}.smt2" \
+                 2> "out/cvc5-m${m}.log" > "out/m${m}.alethe.raw"
+
+            # 剥掉首行 "unsat"，得到纯 Alethe 证明
+            tail -n +2 "out/m${m}.alethe.raw" > "out/m${m}.alethe"
+            echo "proof first line:"; head -1 "out/m${m}.alethe"
+            sha256sum "out/m${m}.alethe" | tee "out/m${m}.alethe.sha256"
+
+            # 独立核验；非零退出即让 job 失败
+            carcara check --allow-int-real-subtyping --expand-let-bindings \
+              "out/m${m}.alethe" "out/m${m}.smt2"
+            echo "m=$m : carcara check PASS"
           done
+          echo "ALL m=8..12 CHECKS PASSED"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: n4-alethe-proofs
+          path: out/

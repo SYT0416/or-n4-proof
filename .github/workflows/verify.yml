@@ -14,6 +14,7 @@ jobs:
           git checkout 394edbb15ba95c47893f1d821fddde7e016af178
           cargo build --release
           echo "$PWD/target/release" >> $GITHUB_PATH
+          ls -l rewrites.eo || echo "no rewrites.eo at repo root"
       - name: Get cvc5
         run: |
           curl -L -o cvc5.zip https://github.com/cvc5/cvc5/releases/latest/download/cvc5-Linux-x86_64-static.zip
@@ -22,25 +23,19 @@ jobs:
       - name: Produce and check Alethe proofs
         run: |
           set -uo pipefail
+          echo "===== carcara flags ====="
+          carcara check --help 2>&1 | grep -E "rare-file|ignore-unknown|expand-let|int-real" || true
           mkdir -p out
+          RARE="$GITHUB_WORKSPACE/carcara-src/rewrites.eo"
           for m in 8 9 10 11 12; do
-            echo "===== m=$m : build smt2 ====="
+            echo "========== m=$m =========="
             python3 ci/dump_smt2.py --m $m > out/m$m.smt2
-            sha256sum out/m$m.smt2 >> out/hashes.txt
-            echo "===== m=$m : cvc5 -> alethe ====="
             cvc5 --produce-proofs --proof-format-mode=alethe --dump-proofs out/m$m.smt2 > out/m$m.alethe
             head -1 out/m$m.alethe
-            echo "===== m=$m : carcara check (strict first) ====="
-            if carcara check --allow-int-real-subtyping --expand-let-bindings out/m$m.alethe out/m$m.smt2 > out/m$m.verdict.txt 2>&1; then
-              echo "STRICT PASS -> $(tail -1 out/m$m.verdict.txt)"
-            else
-              echo "STRICT did not pass; retry with --ignore-unknown-rules"
-              carcara check --allow-int-real-subtyping --expand-let-bindings --ignore-unknown-rules out/m$m.alethe out/m$m.smt2 > out/m$m.verdict.txt 2>&1
-              echo "FALLBACK -> $(tail -1 out/m$m.verdict.txt)"
-            fi
-            tail -3 out/m$m.verdict.txt
+            echo "--- A: strict ---"
+            ( carcara check --allow-int-real-subtyping --expand-let-bindings out/m$m.alethe out/m$m.smt2 2>&1 || true ) | tail -6
+            echo "--- B: ignore-unknown ---"
+            ( carcara check --allow-int-real-subtyping --expand-let-bindings --ignore-unknown-rules out/m$m.alethe out/m$m.smt2 2>&1 || true ) | tail -6
+            echo "--- C: rare-file + ignore-unknown ---"
+            ( carcara check --allow-int-real-subtyping --expand-let-bindings --ignore-unknown-rules --rare-file "$RARE" out/m$m.alethe out/m$m.smt2 2>&1 || true ) | tail -6
           done
-      - uses: actions/upload-artifact@v4
-        with:
-          name: alethe-proofs
-          path: out/

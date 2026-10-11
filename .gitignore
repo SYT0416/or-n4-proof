@@ -218,3 +218,26 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- 项目特有：证明工件与运行产物（务必排除）---
+logs/
+out/
+*.alethe
+*.smt2
+*.proof
+*.lrat
+*.drat
+# 论文 PDF（改在 README 里放 DOI 链接）
+refs/
+*.pdf
+# 虚拟环境 / 缓存（Python 模板一般已含，双保险）
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

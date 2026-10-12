@@ -1,6 +1,3 @@
-# .github/workflows/verify.yml
-
-```yaml
 name: verify-n4
 
 on:
@@ -67,4 +64,4 @@ jobs:
         with:
           name: n4-alethe-proofs
           path: out/
-```
+          

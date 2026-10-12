@@ -17,13 +17,15 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      # Build Carcara from a pinned commit of the official repo (ufmg-smite);
-      # the crates.io "carcara" crate is not the right package.
+      # Build Carcara from a pinned commit of the official repo (ufmg-smite).
+      # NOTE: the commit must be reachable from the default branch (main),
+      # otherwise `git clone` won't fetch it and `git checkout` fails with
+      # "unable to read tree". 394edbb was dangling; 96c00843 is main HEAD.
       - name: Install Carcara (pinned commit)
         run: |
           git clone https://github.com/ufmg-smite/carcara.git carcara-src
           cd carcara-src
-          git checkout 394edbb15ba95c47893f1d821fddde7e016af178
+          git checkout 96c00843eb157cb475796483b2ed30a51fb82852
           cargo build --release
           echo "$PWD/target/release" >> "$GITHUB_PATH"
 
@@ -64,4 +66,3 @@ jobs:
         with:
           name: n4-alethe-proofs
           path: out/
-          
